@@ -70,6 +70,8 @@ defmodule Edsl.Runtime do
               Logger.error(
                 "Error while invoking function. Could not match function with given arguments"
               )
+
+              {:error, :function_invocation_failed}
           end
 
         {:error, :no_module_found} ->
