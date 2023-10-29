@@ -10,6 +10,7 @@ defmodule Edsl.Runtime do
   @impl true
   def init(%{"base_dir" => base_dir, "modules" => modules, "branch" => branch} = state)
       when is_binary(base_dir) and is_map(modules) and is_binary(branch) do
+    Logger.info("EDSL runtime initialized")
     {:ok, state}
   end
 
@@ -51,41 +52,49 @@ defmodule Edsl.Runtime do
         _from,
         %{"base_dir" => base_dir, "modules" => modules, "branch" => branch} = state
       ) do
-    Logger.info("Preparing EDSL runtime in '#{base_dir}'")
-    # Each module is a map key that contains a list of commit hashes.
-    # To load the functions into the Elixir runtime, we need to go through
-    # each module and each commit hash and load the functions.
+    Logger.info("Invoking '#{module_name}'")
 
-    {:ok, cwd} = File.cwd()
+    with {:ok, cwd} <- File.cwd(),
+         :ok <- File.cd(base_dir),
+         return_value <-
+           invoke_fn(
+             find_invoke_fn_by_arity(Map.get(modules, module_name), length(args), branch),
+             module_name,
+             args
+           ),
+         :ok <- File.cd(cwd) do
+      {:reply, return_value, state}
+    else
+      _error ->
+        Logger.error(
+          "Could not search for functions. Check if the base directory or branch is correct"
+        )
 
-    # Change working directory to base directory
-    :ok = File.cd(base_dir)
+        {:stop, :function_invocation_failed, state}
+    end
+  end
 
-    return_value =
-      case find_invoke_fn_by_arity(Map.get(modules, module_name), length(args), branch) do
-        {:ok, module} ->
-          try do
-            {:ok, apply(module, :invoke, args)}
-          rescue
-            _exception ->
-              Logger.error(
-                "Error while invoking function. Could not match function with given arguments"
-              )
+  defp invoke_fn({:ok, module}, _module_name, args) do
+    try do
+      {:ok, apply(module, :invoke, args)}
+    rescue
+      _exception ->
+        Logger.error(
+          "Error while invoking function. Could not match function with given arguments"
+        )
 
-              {:error, :function_invocation_failed}
-          end
+        {:error, :function_invocation_failed}
+    end
+  end
 
-        {:error, :no_module_found} ->
-          Logger.error("Could not find module '#{module_name}'")
+  defp invoke_fn({:error, :no_module_found}, module_name, _args) do
+    Logger.error("Could not find module '#{module_name}'")
+    {:error, :no_module_found}
+  end
 
-        {:error, :no_function_found} ->
-          Logger.error("Could not find function with matching arity in module '#{module_name}'")
-      end
-
-    # Change working directory back to original directory
-    :ok = File.cd(cwd)
-
-    {:reply, return_value, state}
+  defp invoke_fn({:error, :no_function_found}, module_name, _args) do
+    Logger.error("Could not find function with matching arity in module '#{module_name}'")
+    {:error, :no_function_found}
   end
 
   defp find_invoke_fn_by_arity(nil, _arity, _branch) do
@@ -94,22 +103,28 @@ defmodule Edsl.Runtime do
 
   defp find_invoke_fn_by_arity(module, arity, branch) do
     Enum.reduce_while(module, {:error, :no_function_found}, fn commit_hash, acc ->
-      # Checkout the current hash
-      Logger.info("Loading commit '#{commit_hash}'")
-      System.cmd("git", ["checkout", commit_hash], stderr_to_stdout: true)
+      try do
+        # Checkout the current hash
+        Logger.info("Loading commit '#{commit_hash}'")
+        {_output, 0} = System.cmd("git", ["checkout", commit_hash], stderr_to_stdout: true)
 
-      # Load the "edsl.exs" file
-      [{module, _bytecode}] = Code.compile_file("edsl.exs")
+        # Load the "edsl.exs" file
+        [{module, _bytecode}] = Code.compile_file("edsl.exs")
 
-      # Checkout back to the original branch
-      System.cmd("git", ["checkout", branch], stderr_to_stdout: true)
+        # Checkout back to the original branch
+        {_output, 0} = System.cmd("git", ["checkout", branch], stderr_to_stdout: true)
 
-      # Check if the function exists
-      if function_exported?(module, :invoke, arity) do
-        Logger.info("Found function with matching arity in commit '#{commit_hash}'")
-        {:halt, {:ok, module}}
-      else
-        {:cont, acc}
+        # Check if the function exists
+        if function_exported?(module, :invoke, arity) do
+          Logger.info("Found function with matching arity in commit '#{commit_hash}'")
+          {:halt, {:ok, module}}
+        else
+          {:cont, acc}
+        end
+      rescue
+        _exception ->
+          Logger.error("Error loading the commit '#{commit_hash}'")
+          {:cont, acc}
       end
     end)
   end
