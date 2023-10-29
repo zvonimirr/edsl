@@ -15,6 +15,7 @@ The first function that matches the arguments arity will be used.
 To configure EDSL use the `edsl.yaml` file in the root directory.
 ### Configuration
 - base_dir - Points to the base directory where the code is located
+- branch - The base branch that we should return to after checking a commit hash
 - modules - Each key holds an array of commit hashes that contain the `invoke` function
 
 To run EDSL make sure you have an existing directory with initialized Git.
