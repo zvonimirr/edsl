@@ -19,6 +19,8 @@ defmodule Edsl.MixProject do
   end
 
   defp deps do
-    []
+    [
+      {:yaml, "~> 0.1.0"}
+    ]
   end
 end

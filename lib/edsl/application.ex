@@ -5,7 +5,10 @@ defmodule Edsl.Application do
 
   @impl true
   def start(_type, _args) do
-    children = []
+    children = [
+      # EDSL Runtime GenServer
+      Edsl.Runtime
+    ]
 
     opts = [strategy: :one_for_one, name: Edsl.Supervisor]
     Supervisor.start_link(children, opts)

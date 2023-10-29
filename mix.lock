@@ -1,0 +1,4 @@
+%{
+  "yamerl": {:hex, :yamerl, "0.7.0", "e51dba652dce74c20a88294130b48051ebbbb0be7d76f22de064f0f3ccf0aaf5", [:rebar3], [], "hexpm", "cb5a4481e2e2ad36db83bd9962153e1a9208e2b2484185e33fc2caac6a50b108"},
+  "yaml": {:hex, :yaml, "0.1.0", "5556164521393c6422c68899b0b33aa675ee15821d9504b7031d5441d7a50672", [:mix], [{:yamerl, "~> 0.7.0", [hex: :yamerl, repo: "hexpm", optional: false]}], "hexpm", "0d7d0e216b34b59f73acce2e67c27733930cf958c60df627c633d2e78afbd08b"},
+}
