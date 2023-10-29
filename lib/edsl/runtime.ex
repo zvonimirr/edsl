@@ -60,54 +60,46 @@ defmodule Edsl.Runtime do
     # Change working directory to base directory
     :ok = File.cd(base_dir)
 
-    # Find the module by key
-    module =
-      with hashes when not is_nil(hashes) <- Map.get(modules, module_name) do
-        Logger.info("Found module '#{module_name}'")
-        # Go through each commit hash and load the functions until we find one
-        # that works.
-        {:ok, module} =
-          Enum.reduce_while(hashes, {:ok, nil}, fn commit_hash, _acc ->
-            Logger.info("Loading commit '#{commit_hash}'")
-            System.cmd("git", ["checkout", commit_hash], stderr_to_stdout: true)
+    case find_invoke_fn_by_arity(Map.get(modules, module_name), length(args), branch) do
+      {:ok, module} ->
+        apply(module, :invoke, args)
 
-            # Load the "edsl.exs" file
-            [{module, _bytecode}] = Code.compile_file("edsl.exs")
+      {:error, :no_module_found} ->
+        Logger.error("Could not find module '#{module_name}'")
 
-            System.cmd("git", ["checkout", branch], stderr_to_stdout: true)
-
-            case function_exported?(module, :invoke, Kernel.length(args)) do
-              true ->
-                Logger.info(
-                  "Found module '#{module_name}' with matching arity in commit '#{commit_hash}'"
-                )
-
-                {:halt, {:ok, module}}
-
-              false ->
-                {:cont, {:ok, nil}}
-            end
-          end)
-
-        # If the module is nil, then we couldn't find a module that matches the
-        # given arguments.
-        if module == nil do
-          Logger.error("Could not find module '#{module_name}' with the matching arity")
-          nil
-        else
-          module
-        end
-      end
+      {:error, :no_function_found} ->
+        Logger.error("Could not find function with matching arity in module '#{module_name}'")
+    end
 
     # Change working directory back to original directory
     :ok = File.cd(cwd)
 
-    # Invoke the function with the given arguments
-    # if it exists.
-    if not is_nil(module) do
-      apply(module, :invoke, args)
-    end
-
     {:reply, :ok, state}
+  end
+
+  defp find_invoke_fn_by_arity(nil, _arity, _branch) do
+    {:error, :no_module_found}
+  end
+
+  defp find_invoke_fn_by_arity(module, arity, branch) do
+    Enum.reduce_while(module, {:error, :no_function_found}, fn commit_hash, acc ->
+      # Checkout the current hash
+      Logger.info("Loading commit '#{commit_hash}'")
+      System.cmd("git", ["checkout", commit_hash], stderr_to_stdout: true)
+
+      # Load the "edsl.exs" file
+      [{module, _bytecode}] = Code.compile_file("edsl.exs")
+
+      # Checkout back to the original branch
+      System.cmd("git", ["checkout", branch], stderr_to_stdout: true)
+
+      # Check if the function exists
+      if function_exported?(module, :invoke, arity) do
+        Logger.info("Found function with matching arity in commit '#{commit_hash}'")
+        {:halt, {:ok, module}}
+      else
+        {:cont, acc}
+      end
+    end)
   end
 end
