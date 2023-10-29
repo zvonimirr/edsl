@@ -8,7 +8,9 @@ To make it more chaotic, I've decided to use YAML instead.
 - Git
 
 ## Usage
-Due to the nature of Elixir, it's not possible to match functions on anything else other than arity so keep that in mind.
+Due to the nature of Elixir, it's not possible to check functions on anything else other than arity since the match is done at runtime so keep that in mind when using EDSL.
+
+The first function that matches the arguments arity will be used.
 
 To configure EDSL use the `edsl.yaml` file in the root directory.
 ### Configuration
