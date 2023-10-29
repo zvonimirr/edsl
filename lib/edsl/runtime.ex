@@ -23,6 +23,7 @@ defmodule Edsl.Runtime do
   """
   def start_link(_opts) do
     Logger.info("Starting EDSL runtime")
+    Code.put_compiler_option(:ignore_module_conflict, true)
 
     with {:ok, content} <- File.read("edsl.yaml"),
          {:ok, yaml} <- YAML.decode(content) do
