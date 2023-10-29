@@ -60,28 +60,29 @@ defmodule Edsl.Runtime do
     # Change working directory to base directory
     :ok = File.cd(base_dir)
 
-    case find_invoke_fn_by_arity(Map.get(modules, module_name), length(args), branch) do
-      {:ok, module} ->
-        try do
-          apply(module, :invoke, args)
-        rescue
-          _exception ->
-            Logger.error(
-              "Error while invoking function. Could not match function with given arguments"
-            )
-        end
+    return_value =
+      case find_invoke_fn_by_arity(Map.get(modules, module_name), length(args), branch) do
+        {:ok, module} ->
+          try do
+            {:ok, apply(module, :invoke, args)}
+          rescue
+            _exception ->
+              Logger.error(
+                "Error while invoking function. Could not match function with given arguments"
+              )
+          end
 
-      {:error, :no_module_found} ->
-        Logger.error("Could not find module '#{module_name}'")
+        {:error, :no_module_found} ->
+          Logger.error("Could not find module '#{module_name}'")
 
-      {:error, :no_function_found} ->
-        Logger.error("Could not find function with matching arity in module '#{module_name}'")
-    end
+        {:error, :no_function_found} ->
+          Logger.error("Could not find function with matching arity in module '#{module_name}'")
+      end
 
     # Change working directory back to original directory
     :ok = File.cd(cwd)
 
-    {:reply, :ok, state}
+    {:reply, return_value, state}
   end
 
   defp find_invoke_fn_by_arity(nil, _arity, _branch) do

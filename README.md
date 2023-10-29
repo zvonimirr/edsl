@@ -32,6 +32,3 @@ To run the example from the template you would call the runtime like this:
 ```
 iex> Edsl.Runtime.invoke("Hello", ["spec"])
 ```
-
-## NOTE
-Currently it's not possible to return values from the functions while using EDSL. That is something that I'll address at some point.
