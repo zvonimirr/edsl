@@ -62,7 +62,14 @@ defmodule Edsl.Runtime do
 
     case find_invoke_fn_by_arity(Map.get(modules, module_name), length(args), branch) do
       {:ok, module} ->
-        apply(module, :invoke, args)
+        try do
+          apply(module, :invoke, args)
+        rescue
+          _exception ->
+            Logger.error(
+              "Error while invoking function. Could not match function with given arguments"
+            )
+        end
 
       {:error, :no_module_found} ->
         Logger.error("Could not find module '#{module_name}'")
