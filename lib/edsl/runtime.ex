@@ -11,7 +11,7 @@ defmodule Edsl.Runtime do
   def init(%{"base_dir" => base_dir, "modules" => modules, "branch" => branch} = state)
       when is_binary(base_dir) and is_map(modules) and is_binary(branch) do
     Logger.info("EDSL runtime initialized")
-    {:ok, state}
+    {:ok, Map.put_new(state, "cache", %{})}
   end
 
   def init(_) do
@@ -51,20 +51,24 @@ defmodule Edsl.Runtime do
   def handle_call(
         {:invoke, module_name, args},
         _from,
-        %{"base_dir" => base_dir, "modules" => modules, "branch" => branch} = state
+        %{"base_dir" => base_dir, "modules" => modules, "branch" => branch, "cache" => cache} =
+          state
       ) do
     Logger.info("Invoking '#{module_name}'")
 
     with {:ok, cwd} <- File.cwd(),
          :ok <- File.cd(base_dir),
-         return_value <-
+         module <- Map.get(modules, module_name),
+         arity <- length(args),
+         cache_key <- "#{module_name}/#{arity}",
+         {success, value, commit_hash} <-
            invoke_fn(
-             find_invoke_fn_by_arity(Map.get(modules, module_name), length(args), branch),
+             find_invoke_fn_by_arity(module, arity, cache, cache_key, branch),
              module_name,
              args
            ),
          :ok <- File.cd(cwd) do
-      {:reply, return_value, state}
+      {:reply, {success, value}, update_cache(cache_key, commit_hash, state)}
     else
       _error ->
         Logger.error(
@@ -75,39 +79,56 @@ defmodule Edsl.Runtime do
     end
   end
 
-  defp invoke_fn({:ok, module}, _module_name, args) do
+  defp update_cache(_key, nil, state) do
+    state
+  end
+
+  defp update_cache(key, commit_hash, state) do
+    Logger.info("Updating cache with key '#{key}'")
+
+    Map.update(state, "cache", %{}, fn cache ->
+      Map.put(cache, key, commit_hash)
+    end)
+  end
+
+  defp invoke_fn({:ok, module, commit_hash}, _module_name, args) do
     try do
-      {:ok, apply(module, :invoke, args)}
+      {:ok, apply(module, :invoke, args), commit_hash}
     rescue
       _exception ->
         Logger.error(
           "Error while invoking function. Could not match function with given arguments"
         )
 
-        {:error, :function_invocation_failed}
+        {:error, :function_invocation_failed, nil}
     end
   end
 
   defp invoke_fn({:error, :no_module_found}, module_name, _args) do
     Logger.error("Could not find module '#{module_name}'")
-    {:error, :no_module_found}
+    {:error, :no_module_found, nil}
   end
 
   defp invoke_fn({:error, :no_function_found}, module_name, _args) do
     Logger.error("Could not find function with matching arity in module '#{module_name}'")
-    {:error, :no_function_found}
+    {:error, :no_function_found, nil}
   end
 
-  defp find_invoke_fn_by_arity(nil, _arity, _branch) do
-    {:error, :no_module_found}
+  defp find_invoke_fn_by_arity(nil, _arity, _cache, _key, _branch) do
+    {:error, :no_module_found, nil}
   end
 
-  defp find_invoke_fn_by_arity(module, arity, branch) do
-    Enum.reduce_while(module, {:error, :no_function_found}, fn commit_hash, acc ->
+  defp find_invoke_fn_by_arity(module, arity, cache, key, branch) do
+    Logger.info("Searching for function with key '#{key}'")
+
+    if Map.has_key?(cache, key) do
+      Logger.info("Found function in cache")
+      hash = Map.get(cache, key)
+
       try do
         # Checkout the current hash
-        Logger.info("Loading commit '#{commit_hash}'")
-        {_output, 0} = System.cmd("git", ["checkout", commit_hash], stderr_to_stdout: true)
+        Logger.info("Loading commit '#{hash}'")
+        {_output, 0} = System.cmd("git", ["checkout", hash], stderr_to_stdout: true)
 
         # Load the "edsl.exs" file
         [{module, _bytecode}] = Code.compile_file("edsl.exs")
@@ -115,18 +136,40 @@ defmodule Edsl.Runtime do
         # Checkout back to the original branch
         {_output, 0} = System.cmd("git", ["checkout", branch], stderr_to_stdout: true)
 
-        # Check if the function exists
-        if function_exported?(module, :invoke, arity) do
-          Logger.info("Found function with matching arity in commit '#{commit_hash}'")
-          {:halt, {:ok, module}}
-        else
-          {:cont, acc}
-        end
+        {:ok, module, hash}
       rescue
         _exception ->
-          Logger.error("Error loading the commit '#{commit_hash}'")
-          {:cont, acc}
+          Logger.error("Error loading the commit '#{hash}'")
+          {:error, :no_function_found, nil}
       end
-    end)
+    else
+      Logger.info("Searching for function in git history")
+
+      Enum.reduce_while(module, {:error, :no_function_found}, fn commit_hash, acc ->
+        try do
+          # Checkout the current hash
+          Logger.info("Loading commit '#{commit_hash}'")
+          {_output, 0} = System.cmd("git", ["checkout", commit_hash], stderr_to_stdout: true)
+
+          # Load the "edsl.exs" file
+          [{module, _bytecode}] = Code.compile_file("edsl.exs")
+
+          # Checkout back to the original branch
+          {_output, 0} = System.cmd("git", ["checkout", branch], stderr_to_stdout: true)
+
+          # Check if the function exists
+          if function_exported?(module, :invoke, arity) do
+            Logger.info("Found function with matching arity in commit '#{commit_hash}'")
+            {:halt, {:ok, module, commit_hash}}
+          else
+            {:cont, acc}
+          end
+        rescue
+          _exception ->
+            Logger.error("Error loading the commit '#{commit_hash}'")
+            {:cont, acc}
+        end
+      end)
+    end
   end
 end
