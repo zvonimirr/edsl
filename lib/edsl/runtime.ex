@@ -22,11 +22,12 @@ defmodule Edsl.Runtime do
   @doc """
   Loads the YAML file and loads the functions into the Elixir runtime.
   """
-  def start_link(_opts) do
+  def start_link(opts) do
     Logger.info("Starting EDSL runtime")
     Code.put_compiler_option(:ignore_module_conflict, true)
 
-    with {:ok, content} <- File.read("edsl.yaml"),
+    with config_path when is_binary(config_path) <- Keyword.get(opts, :config_path, "edsl.yaml"),
+         {:ok, content} <- File.read(config_path),
          {:ok, yaml} <- YAML.decode(content) do
       Logger.info("Loaded YAML file")
       Logger.debug("YAML file content: #{inspect(yaml)}")
