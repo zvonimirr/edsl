@@ -102,7 +102,7 @@ defmodule Edsl.Runtime do
     Logger.info("Updating cache with key '#{key}'")
 
     Map.update(state, "cache", %{}, fn cache ->
-      Map.put(cache, key, commit_hash)
+      Map.put_new(cache, key, commit_hash)
     end)
   end
 
