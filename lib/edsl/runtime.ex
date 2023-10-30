@@ -45,6 +45,13 @@ defmodule Edsl.Runtime do
     GenServer.call(__MODULE__, {:invoke, module_name, args})
   end
 
+  @doc """
+  Clear the cache of the EDSL runtime.
+  """
+  def clear_cache do
+    GenServer.call(__MODULE__, :clear_cache)
+  end
+
   # Callbacks
 
   @impl true
@@ -78,6 +85,14 @@ defmodule Edsl.Runtime do
         {:stop, :function_invocation_failed, state}
     end
   end
+
+  @impl true
+  def handle_call(:clear_cache, _, %{"cache" => _cache} = state) do
+    Logger.info("Clearing EDSL runtime cache")
+    {:reply, :ok, Map.put(state, "cache", %{})}
+  end
+
+  # Helpers
 
   defp update_cache(_key, nil, state) do
     state
