@@ -141,15 +141,7 @@ defmodule Edsl.Runtime do
       hash = Map.get(cache, key)
 
       try do
-        # Checkout the current hash
-        Logger.info("Loading commit '#{hash}'")
-        {_output, 0} = System.cmd("git", ["checkout", hash], stderr_to_stdout: true)
-
-        # Load the "edsl.exs" file
-        [{module, _bytecode}] = Code.compile_file("edsl.exs")
-
-        # Checkout back to the original branch
-        {_output, 0} = System.cmd("git", ["checkout", branch], stderr_to_stdout: true)
+        module = load_module_from_commit(hash, branch)
 
         {:ok, module, hash}
       rescue
@@ -162,15 +154,7 @@ defmodule Edsl.Runtime do
 
       Enum.reduce_while(module, {:error, :no_function_found}, fn commit_hash, acc ->
         try do
-          # Checkout the current hash
-          Logger.info("Loading commit '#{commit_hash}'")
-          {_output, 0} = System.cmd("git", ["checkout", commit_hash], stderr_to_stdout: true)
-
-          # Load the "edsl.exs" file
-          [{module, _bytecode}] = Code.compile_file("edsl.exs")
-
-          # Checkout back to the original branch
-          {_output, 0} = System.cmd("git", ["checkout", branch], stderr_to_stdout: true)
+          module = load_module_from_commit(commit_hash, branch)
 
           # Check if the function exists
           if function_exported?(module, :invoke, arity) do
@@ -186,5 +170,19 @@ defmodule Edsl.Runtime do
         end
       end)
     end
+  end
+
+  defp load_module_from_commit(commit_hash, branch) do
+    # Checkout the current hash
+    Logger.info("Loading commit '#{commit_hash}'")
+    {_output, 0} = System.cmd("git", ["checkout", commit_hash], stderr_to_stdout: true)
+
+    # Load the "edsl.exs" file
+    [{module, _bytecode}] = Code.compile_file("edsl.exs")
+
+    # Checkout back to the original branch
+    {_output, 0} = System.cmd("git", ["checkout", branch], stderr_to_stdout: true)
+
+    module
   end
 end
